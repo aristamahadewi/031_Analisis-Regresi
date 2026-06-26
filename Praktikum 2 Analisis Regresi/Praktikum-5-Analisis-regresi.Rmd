@@ -1,0 +1,261 @@
+---
+title: "Praktikum 5 Anreg"
+author: "Ni Kadek Arista Mahadewi"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown
+---
+
+# Library
+
+```{r}
+library(readxl) # untuk membaca data
+library(GGally) # untuk menghasilkan matriks hubungan antarpeubah
+library(corrplot) # untuk menghasilkan matriks korelasi
+library(dplyr) # untuk manipulasi data
+library(car) # untuk memeriksa multikolinearitas
+```
+
+# Data
+
+```{r}
+data <- read_excel("C:\\Users\\62878\\OneDrive\\Desktop\\Documents\\Analisis Regresi\\data analisis regresi\\DATA PRAKTIKUM ANREG.xlsx")
+head(data) # menampilkan sekian data awal
+str(data) # menampilkan tipe data setiap peubah
+summary(data) # menampilkan ringkasan data
+```
+Data yang digunakan adalah data dari 38 provinsi di Indonesia dengan 1 peubah respon yaitu Persentase Penduduk yang Memiliki Jaminan Kesehatan dan 5 peubah penjelas yang seluruhnya merupakan peubah kuantitatif. Peubah tersebut adalah Produk Domestik Regional Bruto (PDRB), Tingkat Kemiskinan, Tingkat Pengangguran Terbuka (TPT), Rata-rata Lama Sekolah (RLS), dan Tingkat Partisipasi Angkatan Kerja (TPAK).
+
+Untuk mempermudah dalam komputasi, karena peubah provinsi tidak digunakan dalam pemodelan, maka peubah tersebut dapat dihapus. Pada praktikum kali ini akan dilakukan pemodelan regresi linear berganda untuk mengetahui pengaruh PDRB, Tingkat Kemiskinan, TPT, Rata-rata Lama Sekolah, dan TPAK terhadap Persentase Penduduk yang Memiliki Jaminan Kesehatan.
+
+
+```{r}
+data <- select(data, -Provinsi)
+dt <- data
+```
+```{r}
+colnames(data) <- c("JK", "PDRB", "Kemiskinan", "TPT", "RLS", "TPAK")
+dt <- data
+```
+
+# Eksplorasi data
+```{r}
+hist(dt$JK, main = "Sebaran Persentase Penduduk yang Memiliki Jaminan Kesehatan")
+```
+
+```{r}
+boxplot(dt$JK, main = "Sebaran Persentase Penduduk yang Memiliki Jaminan Kesehatan")
+```
+
+```{r}
+ggpairs(dt,
+        upper = list(continuous = wrap('cor', size = 3)),
+        title = "Matriks Scatterplot Data")
+```
+
+```{r}
+cor_matrix <- cor(dt, use = "complete.obs")
+
+corrplot(cor_matrix, method = "color", type = "lower",
+         col = colorRampPalette(c("red", "white", "blue"))(200),
+         addCoef.col = "black", tl.col = "black", tl.srt = 35)
+```
+
+Hasil matriks scatter plot dan korelasi menunjukkan bahwa peubah respon Persentase Penduduk yang Memiliki Jaminan Kesehatan (JK) memiliki hubungan positif dengan PDRB, Tingkat Kemiskinan, dan TPAK, serta hubungan negatif dengan TPT. Sementara itu, hubungan antara JK dengan Rata-rata Lama Sekolah (RLS) sangat lemah karena nilai korelasinya mendekati nol.
+
+Selain itu, terdapat beberapa korelasi yang cukup tinggi antar peubah penjelas. Beberapa di antaranya adalah:
+
+1. RLS dan TPAK memiliki korelasi negatif sebesar -0,71.
+2. TPT dan TPAK memiliki korelasi negatif sebesar -0,65.
+3. Tingkat Kemiskinan dan TPAK memiliki korelasi positif sebesar 0,59.
+4. Tingkat Kemiskinan dan RLS memiliki korelasi negatif sebesar -0,57.
+5. TPT dan RLS memiliki korelasi positif sebesar 0,57.
+
+Korelasi yang cukup tinggi antar beberapa peubah penjelas tersebut mengindikasikan adanya potensi multikolinearitas yang dapat memengaruhi hasil pendugaan model regresi sehingga perlu dilakukan pemeriksaan lebih lanjut.
+
+
+# Pemodelan
+
+## Tanpa Fungsi
+
+Perhitungan nilai $\hat{\beta}$ secara matriks dapat dilakukan dengan rumus berikut.
+
+$$\hat{\beta} = (X'X)^{-1} X'y$$
+
+```{r}
+# Pembentukan matriks
+n <- nrow(dt)
+x0 <- rep(1, n)
+
+x <- data.frame(
+  x0,
+  dt$PDRB,
+  dt$Kemiskinan,
+  dt$TPT,
+  dt$RLS,
+  dt$TPAK
+)
+
+x <- as.matrix(x)
+y <- dt$JK
+```
+
+```{r}
+beta_duga <- solve(t(x) %*% x) %*% t(x) %*% y
+beta_duga
+```
+
+Hasil tersebut menjelaskan bahwa persamaan regresi yang terbentuk adalah
+
+$$
+\hat{JK}=62.3215+0.0000293PDRB+0.4596Kemiskinan-1.7516TPT+2.0013RLS-0.0255TPAK
+$$
+
+Selang kepercayaan dan pengujian signifikansi setiap parameter dapat dilakukan dengan menghitung keragaman tiap dugaan parameter. Secara umum, nilai ragam dugaan parameter $\hat{\beta}_j$ dapat dihitung melalui rumus berikut.
+
+$$Var(\hat{\beta}_j) = \hat{\sigma}^2 C_{jj}$$
+Dengan matriks $C$ adalah matriks $(X'X)^{-1}$ 
+
+```{r}
+c <- data.frame(solve(t(x)%*%x))
+```
+
+Unsur diagonal dari matriks $C$ dapat digunakan untuk menghitung nilai galat baku dari setiap dugaan parameter. Galat baku ini dapat digunakan untuk menghitung selang kepercayaan dari dugaan yang dihasilkan.
+
+$$SE(\hat{\beta}_j) = \sqrt{Var(\hat{\beta}_j)} = \sqrt{\sigma^2 C_{jj}} = \hat{\sigma}\sqrt{c_{ii}}$$
+
+Misal ingin dihitung selang kepercayaan dari dugaan parameter $\beta_2$, maka
+
+```{r}
+y_hat <- x %*% beta_duga
+residuals <- y - y_hat
+n <- nrow(x)
+p <- ncol(x)
+KTG <- sum(residuals^2) / (n - p) 
+
+c22 <- c[2,2]
+
+(se.b2 <- sqrt(KTG*c22))
+```
+
+```{r}
+alfa <- 0.05
+
+#Batas Bawah beta2
+(bb.b2 <- beta_duga[3,1] - abs(qt(alfa/2, df=n-p))*se.b2)
+```
+
+```{r}
+#Batas Atas beta2
+(ba.b2 <- beta_duga[3,1] + abs(qt(alfa/2, df=n-p))*se.b2)
+```
+
+Dengan demikian, kita dapat ketahui selang kepercayaan untuk $\hat{\beta}_2$ sebagai berikut.
+$$0.4595267 <\hat{\beta}_2< 0.4596286 $$
+
+Pada kasus selang kepercayaan $\hat{\beta}_2$ di atas, didapati bahwa dugaan parameter berada dalam rentang yang mengandung nilai 0. Dengan demikian, dapat dimaknai bahwa diduga nilai parameter $\hat{\beta}_2$ bernilai 0 atau tidak signifikan dalam taraf nyata 5%.
+
+# Dengan Fungsi
+
+```{r}
+model1 <- lm(JK ~ ., data = dt)
+summary(model1)
+```
+Dugaan parameter model secara matriks dan fungsi menghasilkan nilai yang sama, sehingga perhitungan menggunakan metode matriks telah sesuai. Berdasarkan ringkasan model, tidak terdapat peubah yang signifikan pada taraf nyata 5% karena seluruh peubah memiliki nilai p-value lebih besar dari 0,05. Selain itu, secara simultan model juga tidak signifikan, ditunjukkan oleh nilai p-value uji F sebesar 0,4956 yang lebih besar dari taraf nyata 5%. Hal ini menunjukkan bahwa peubah PDRB, Tingkat Kemiskinan, TPT, Rata-rata Lama Sekolah (RLS), dan TPAK secara bersama-sama belum mampu menjelaskan variasi Persentase Penduduk yang Memiliki Jaminan Kesehatan dengan baik. Nilai koefisien determinasi (R²) sebesar 0,1228 juga menunjukkan bahwa model hanya mampu menjelaskan sekitar 12,28% keragaman peubah respon, sedangkan sisanya dijelaskan oleh faktor lain di luar model.
+
+# Pemeriksaan Multikolinearitas
+
+```{r}
+vif(model1)
+```
+Hasil uji multikolinearitas menunjukkan bahwa seluruh peubah penjelas memiliki nilai VIF kurang dari 5, yaitu PDRB sebesar 1,2156, Tingkat Kemiskinan sebesar 1,9252, TPT sebesar 2,0792, Rata-rata Lama Sekolah (RLS) sebesar 2,4719, dan TPAK sebesar 3,1128. Hal ini menunjukkan bahwa tidak terdapat indikasi multikolinearitas yang serius pada model, sehingga seluruh peubah penjelas dapat dipertahankan dalam analisis.
+
+
+# Uji Hipotesis Kesamaan Parameter Regresi
+```{r}
+model4 <- lm(JK ~ PDRB + Kemiskinan + TPT + RLS, data = dt)
+summary(model4)
+```
+
+```{r}
+vif(model4)
+```
+Regresi yang dihasilkan tidak mengalami masalah multikolinearitas karena seluruh peubah penjelas memiliki nilai VIF kurang dari 5. Hasil tersebut menunjukkan bahwa tidak terdapat peubah yang signifikan pada taraf nyata 5%, karena seluruh peubah memiliki nilai p-value lebih besar dari 0,05. Selain itu, model juga tidak signifikan secara simultan dengan nilai p-value uji F sebesar 0,3486 yang lebih besar dari taraf nyata 5%. Berikut adalah persamaan regresi yang terbentuk.
+
+$$
+\hat{JK}=60.1800+0.0000294PDRB+0.4535Kemiskinan-1.7160TPT+2.0270RLS
+$$
+
+Hasil pemodelan tersebut dapat dilakukan serangkaian uji untuk memeriksa apakah parameter β₂ dan β₃ dapat diasumsikan sama ketika parameter lainnya diasumsikan sama dengan nol.
+
+Hipotesis yang diuji adalah
+
+$$
+H_0:\beta_2=\beta_3
+$$
+
+$$
+H_1:\beta_2\neq\beta_3
+$$
+
+Karena peubah PDRB dan Rata-rata Lama Sekolah (RLS) tidak signifikan, maka keduanya diasumsikan bernilai nol sehingga model dapat disederhanakan menjadi
+
+$$
+JK=\beta_0+\beta_2,Kemiskinan+\beta_3,TPT+\varepsilon
+$$
+
+Jika $H_0$ benar $(\beta_2=\beta_3=\beta_1')$, maka model dapat ditulis kembali sebagai
+
+$$
+JK=\beta_0+\beta_1'(Kemiskinan+TPT)+\varepsilon.
+$$
+
+
+```{r}
+# Buat peubah baru
+dt$X_new <- dt$Kemiskinan + dt$TPT
+
+# Model penuh (Full Model)
+model_full <- lm(JK ~ Kemiskinan + TPT, data = dt)
+
+# Model terbatas (Restricted Model)
+model_restricted <- lm(JK ~ X_new, data = dt)
+
+# Bandingkan dengan Uji F
+anova(model_restricted, model_full)
+```
+Hasil perbandingan menunjukkan bahwa nilai p-value sebesar 0,4535 lebih besar daripada taraf nyata 5%, sehingga gagal menolak H₀. Hal ini menunjukkan bahwa koefisien peubah Tingkat Kemiskinan dan TPT tidak berbeda secara signifikan sehingga kedua peubah tersebut dapat digabung menjadi satu peubah baru. Selanjutnya dapat dipilih model terbaik antara model dengan empat peubah dan model yang telah disederhanakan berdasarkan nilai Adjusted R-Squared, AIC, dan BIC.
+
+```{r}
+model_all <- lm(JK ~ PDRB + Kemiskinan + TPT + RLS, data = dt)
+summary(model_all)
+```
+
+```{r}
+model_signif <- lm(JK ~ Kemiskinan + TPT, data = dt)
+summary(model_signif)
+```
+
+```{r}
+perbandingan <- data.frame(
+  Model = c("Peubah Penuh", "Peubah Terbatas"),
+  Adjusted_R2 = c(summary(model_all)$adj.r.squared,
+                  summary(model_signif)$adj.r.squared),
+  AIC = c(AIC(model_all), AIC(model_signif)),
+  BIC = c(BIC(model_all), BIC(model_signif))
+)
+perbandingan
+```
+Berdasarkan indikator Adjusted R-Squared, AIC, dan BIC diperoleh hasil yang berbeda. Model dengan peubah penuh memiliki nilai Adjusted R-Squared yang lebih tinggi, sedangkan model dengan peubah terbatas memiliki nilai AIC dan BIC yang lebih kecil. Hal ini menunjukkan bahwa model dengan peubah terbatas lebih sederhana dan memiliki tingkat kecocokan yang lebih baik berdasarkan kriteria AIC dan BIC, meskipun kemampuan model dalam menjelaskan keragaman data sedikit lebih rendah dibandingkan model penuh. Oleh karena itu, model dengan peubah terbatas dipilih sebagai model akhir.
+
+Persamaan regresi yang terbentuk adalah sebagai berikut
+
+$$
+\hat{JK}=79.8020+0.1974Kemiskinan-0.6104TPT
+$$
+
+Interpretasi:
+
+1. Dugaan rata-rata persentase penduduk yang memiliki jaminan kesehatan adalah sebesar 79,8020% apabila Tingkat Kemiskinan dan TPT bernilai 0.
+2. Dugaan rata-rata persentase penduduk yang memiliki jaminan kesehatan akan meningkat sebesar 0,1974% apabila Tingkat Kemiskinan meningkat satu persen dengan asumsi TPT konstan.
+3. Dugaan rata-rata persentase penduduk yang memiliki jaminan kesehatan akan menurun sebesar 0,6104% apabila TPT meningkat satu persen dengan asumsi Tingkat Kemiskinan konstan.
